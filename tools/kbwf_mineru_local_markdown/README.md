@@ -1,86 +1,99 @@
 # MinerU 本地 PDF 入库工作流模板
 
+## 版本说明
+
+**当前版本**：2.4.0
+
+- 适用于 MaxKB v2.10.4-lts 及以上版本
+- 适配 MinerU（API 服务）3.4.4
+
 ## 简介
 
-**MinerU 本地 PDF 入库工作流模板** 是一个面向知识库构建场景的工作流模板。它调用本地离线部署的 MinerU（Gradio 服务）解析用户上传的 PDF，直接获取 Markdown 文本，并在 MaxKB 内继续完成文档分段和知识库入库。
-
-该模板适合无法访问公网 API、需要本地私有化部署、或者只需要文本入库而不要求图片上传 OSS 的场景。
+**MinerU 本地 PDF 入库工作流模板** 是一个面向知识库构建场景的工作流模板。它调用本地 MinerU API 服务解析用户上传的文档，直接获取 Markdown 文本，并在 MaxKB 内继续完成文档分段和知识库入库。
 
 ## 工作流能力
 
-- 接收用户上传的 PDF 文件
-- 调用本地 MinerU 服务完成 PDF 转 Markdown
-- 直接使用 Markdown 文本进入文档分段节点
+- 接收用户上传的多种文件：PDF / Word(docx) / PPT(pptx) / Excel(xlsx) / 图片
+- 调用 MinerU API（`http://<mineru-ip>:9000`）完成文档转 Markdown
+- 可选开启 **Word 转 PDF** 开关：`word_pdf_enable=true` 时先经 unoserver 转换，`false` 时直接透传解析
 - 将分段结果写入指定知识库，完成 RAG 入库
 
 ## 前置条件
 
-1. 已离线部署 MinerU（Gradio 服务）
-
-参考：
-https://opendatalab.github.io/MinerU/zh/quick_start/docker_deployment/
-
-2. 在 MaxKB 容器内安装依赖并授权临时目录
-
-```bash
-# 到 maxkb 容器内安装 gradio_client
-docker exec -it maxkb bash
-pip install gradio_client
-
-# 如果安装 gradio_client 提示 huggingface-hub 版本冲突，则使用 pip 的兼容性模式，同时安装兼容版本
-pip install gradio_client huggingface-hub==0.34.0
-
-# 授权 tmp 目录的访问操作权限
-chmod 777 /tmp
-```
+1. 已部署可访问的 MinerU API 服务（支持 `/tasks` 接口，默认 `http://<mineru-ip>:9000`）
+2. 若开启 Word 转 PDF 开关，需已部署可访问的 **unoserver** 服务（默认 `http://<unoserver-ip>:2003`）
 
 ## 工作流结构
 
-该模板通常包含以下几个核心节点：
+该模板包含以下核心节点：
 
-1. 开始节点：接收用户上传的 PDF 文件
-2. MinerU 离线 PDF 转 Markdown 工具：调用本地 MinerU 解析文档
-3. 文档分段节点：对 Markdown 文本进行切分
-4. 知识库写入节点：将切分后的结果写入知识库
+1. **本地文件**（数据源）：接收用户上传的文件列表
+2. **Word转PDF**（工具节点）：按 `word_pdf_enable` 开关决定「转 PDF」还是「透传原文件」
+3. **MinerU 解析**（工具节点）：调用 MinerU API 解析为 Markdown
+4. **文档分段**：对 Markdown 文本进行切分
+5. **知识库写入**：将切分结果写入知识库
 
 ## 关键参数
 
-### MinerU 工具节点输入参数
+### 开关（工作流全局参数）
 
 | 参数名 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `file_input` | Array / Object | ✅ | 开始节点传入的文件对象 |
-| `url_prefix` | String | ✅ | MaxKB 基础地址前缀，用于拼接文件下载地址 |
-| `mineru_gradio_url` | String | ✅ | 本地 MinerU Gradio 服务地址 |
-| `gradio_retry_count` | Integer | ❌ | Gradio 调用失败时的重试次数 |
-| `max_convert_pages` | Integer | ❌ | 最大处理页数 |
-| `timeout` | Integer | ❌ | 下载与解析超时时间，单位秒 |
+| `word_pdf_enable` | Boolean | ❌ | Word 转 PDF 开关；`true` 先转 PDF 再解析，`false` 透传原文件直接解析 |
 
-### 启动参数示例
+### Word转PDF 工具节点启动参数
 
-| 参数名 | 示例值 |
-| --- | --- |
-| `url_prefix` | `http://192.168.11.114:8080/admin` |
-| `mineru_gradio_url` | `http://192.168.11.114:7860/` |
-| `gradio_retry_count` | `2` |
-| `max_convert_pages` | `500` |
-| `timeout` | `600` |
+| 参数名 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `unoserver_url` | String | ✅ | unoserver 服务地址，如 `http://<unoserver-ip>:2003` |
+| `api_base_url` | String | ✅ | MaxKB 访问地址，如 `http://<maxkb-ip>:8080/` |
+| `api_auth_token` | String | ✅ | MaxKB 用户 API Token（`user-xxx`） |
+| `username` | String | ✅ | MaxKB 登录用户名，用于获取文件下载 Cookie |
+| `password` | String | ✅ | MaxKB 登录密码 |
+| `source_id` | String | ✅ | 知识库 ID，用于上传归属（防止转出的 PDF 被临时清理） |
 
+### MinerU 解析工具节点启动参数
+
+| 参数名 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `mineru_api_base_url` | String | ✅ | MinerU API 服务地址，如 `http://<mineru-ip>:9000` |
+| `url_prefix` | String | ✅ | MaxKB 基础地址前缀，用于拼接文件下载地址，如 `http://<maxkb-ip>:8080/admin` |
+| `upload_token` | String | ✅ | MaxKB 用户 API Token（`user-xxx`），用于 OSS 接口鉴权 |
+| `username` | String | ✅ | MaxKB 登录用户名 |
+| `password` | String | ✅ | MaxKB 登录密码 |
+| `knowledge_id` | String | ✅ | 当前工作流知识库 ID，用于图片上传归属 |
+| `backend` | String | ✅ | MinerU 处理引擎，如 `pipeline`、`hybrid-engine` |
+| `parse_method` | String | ✅ | 解析方式，如 `auto`、`txt`、`ocr` |
+| `effort` | String | ✅ | 解析力度，如 `medium`、`high` |
+| `formula_enable` | Boolean | ✅ | 是否解析公式 |
+| `table_enable` | Boolean | ✅ | 是否解析表格 |
+| `image_analysis` | Boolean | ✅ | 是否进行图片/图表分析 |
+
+
+## LLM 标题增强说明
+### MinerU llm-aided config
+
+建议在 MinerU 中开启 `llm-aided config`，以保证转换出的 Markdown 标题层级仍然清晰规范。
+`llm-aided config` 是 MinerU 中 `mineru.json` 配置文件的一部分，用于配置并启用大模型辅助识别和优化 PDF 文档中的标题层级。开启后，MinerU 在解析复杂 PDF 时会利用大模型智能识别文档中的标题，划分多级标题层级（H1、H2、H3 等），让转换出的 Markdown 结构更清晰规范。
 ## 使用说明
 
 1. 导入该 `kbwf` 模板到 MaxKB
-2. 确认工具节点中的 `url_prefix` 与 `mineru_gradio_url` 填写正确
-3. 按需设置 `gradio_retry_count`、`max_convert_pages`、`timeout`
-4. 上传测试 PDF 文件
-5. 检查工具节点输出中的 `content`
-6. 确认文档分段与知识库写入结果正常
+2. 确认 `unoserver_url`、`api_base_url`、`mineru_api_base_url`、`url_prefix` 填写正确
+3. 填写两个工具节点的 `api_auth_token`、`username`、`password`、`knowledge_id` / `source_id`
+4. 按需设置 MinerU 的 `backend`、`parse_method` 等
+5. 上传测试文件
+6. 按需开启 / 关闭 `word_pdf_enable` 开关
+7. 检查工具节点输出中的 `content`
+8. 确认文档分段与知识库写入结果正常
 
 ## 注意事项
 
-- 该模板依赖本地 MinerU 服务可访问，不能直接替代在线 MinerU API 工作流
-- 该模板输出以 Markdown 文本为主，不包含图片上传 OSS 的处理链路
-- 如果 PDF 文件较大或内容复杂，建议调大 `timeout` 并确认容器临时目录可写
+- 若在 ON 状态混入非 Word 文件，Word转PDF 节点会因「不支持的文件格式」报错——请按文件类型分开上传
+- MinerU 3.4.4 原生支持 docx / pptx / xlsx / 图片，无需必经 Word 转 PDF
+
+- **无 GPU 建议**：没有 GPU 时建议开启 `word_pdf_enable`，开启后可达与 GPU 相同的解析效果。
 
 ## 关联工具
 
-- `tool_mineru_local_markdown`：本工作流依赖的核心工具
+- `tool_unoserver_file_converter`：Word 转 PDF 工具（依赖 unoserver 服务）
+- `mineru-parser`（MinerU API 批量解析）：调用本地 MinerU `/tasks` 接口解析
