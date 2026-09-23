@@ -1,0 +1,5 @@
+name: MySQL 查询
+tags:
+  - 数据库查询
+title: 一个连接MySQL数据库执行SQL查询的工具
+description: 一个连接MySQL数据库执行SQL查询的工具
